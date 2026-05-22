@@ -52,26 +52,42 @@ std::map<std::string, std::map<std::string, std::string>> read_ini(const std::st
     return ini_data; // 返回解析后的配置（无全局变量）
 }
 
-cv::Mat readImage(const std::string& path) {
-	cv::Mat image = cv::imread(path,cv::COLOR_BGR2GRAY);
-	return image;
+cv::Mat readImage(const std::string& path, std::string img_type) {
+    if (img_type == "tif" || img_type == "TIF" || img_type == "MIM" || img_type == "mim") {
+        cv::Mat image = cv::imread(path, cv::COLOR_BGR2GRAY);
+        return image;
+    }
+    if (img_type == "csv" || img_type == "CSV") {
+        std::vector<std::vector<float>> g;
+        std::string l;
+        for (std::ifstream s(path); std::getline(s, l);) {
+            std::stringstream t(l);
+            std::vector<float> r;
+            std::string v;
+            while (std::getline(t, v, ',')) r.push_back(std::stof(v));
+            g.emplace_back(r);
+        }
+        cv::Mat m(g.size(), g[0].size(), CV_32F);
+        for (int i = 0; i < m.rows; ++i) std::memcpy(m.ptr(i), g[i].data(), m.cols * sizeof(float));
+        return m;
+    }
 }
 
-std::string get_time() {
-    auto now = std::chrono::system_clock::now();
-    std::time_t t = std::chrono::system_clock::to_time_t(now);
+std::vector<float> parse2Float(const std::string& str) {
+    // convert '1,0.9,0.8' to [1,0.9,0.8]
+    std::vector<float> values;
+    std::stringstream ss(str);
+    std::string item;
 
-    struct tm local_tm = { 0 };
-
-    errno_t err = localtime_s(&local_tm, &t);
-    if (err != 0) {
-        return "fail to get current time";
+    // 按逗号分割
+    while (std::getline(ss, item, ',')) {
+        // 去掉空格（防止 "1, 0.9 , 0.8" 这种格式报错）
+        item.erase(std::remove_if(item.begin(), item.end(), isspace), item.end());
+        if (!item.empty()) {
+            values.push_back(std::stof(item)); // 转成浮点数
+        }
     }
-
-    std::ostringstream oss;
-    oss << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S: ");
-
-    return oss.str();
+    return values;
 }
 
 void img_flip(cv::Mat& img, int position) {
@@ -101,15 +117,40 @@ void string_split(std::string line, std::vector<std::string>& list, char symbol)
     for (std::string t; std::getline(ss, t, symbol); list.push_back(t));
 }
 
+void string_split_num(std::string line, std::vector<double>& list, char symbol) {
+    std::stringstream ss(line);
+    for (std::string t; std::getline(ss, t, symbol); list.push_back(std::stod(t)));
+}
+
 void color2mono(cv::Mat img, std::vector<cv::Mat>& imgc) {
     cv::Mat color_img;
-    cv::cvtColor(img, color_img, cv::COLOR_BayerRG2BGR);
+    cv::cvtColor(img, color_img, cv::COLOR_BayerRGGB2RGB);
     /*std::vector<cv::Mat> imgc;*/
     cv::split(color_img, imgc);
 
     /*imgr = planes[2];
     imgg = planes[1];
     imgb = planes[0];*/
+}
+
+cv::Mat preprocess4color_location_map(cv::Mat location_map, std::string single_color) {
+    cv::Mat img_low, img_high;
+    // get high freq. info.
+    cv::GaussianBlur(location_map, img_low, cv::Size(11, 11),3);
+    img_high = location_map - 0.5*img_low;
+    // erode
+    if (single_color != "G") { // G画面像素密集，故不进行腐蚀
+        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+        cv::erode(img_high, img_high, kernel);
+    }
+    
+    // nonzeros value should be in a suitable value range
+    double ratio = cv::sum(img_high)[0] / cv::countNonZero(img_high);
+    if (ratio<50){ // changeable
+        img_high *= 128 / ratio;
+    }
+
+    return img_high;
 }
 
 void img_calibration(cv::Mat& img, cv::Mat& ffc_calibration_coef,  int img_idx) {

@@ -1,6 +1,11 @@
 #include "utils.h"
 
-void plot_map(cv::Mat img, cv::Mat mapx, cv::Mat mapy,int is_save_location_map) {
+void plot_map(const cv::Mat src, cv::Mat mapx, cv::Mat mapy,std::string color,int is_save_location_map) {
+    cv::Mat img = src.clone();
+    if (img.depth() == CV_16U) {
+        img /= 256;
+        img.convertTo(img, CV_8UC1);
+    }
     //mono2color
     cv::Mat color_img;
     cv::cvtColor(img,color_img, cv::COLOR_GRAY2BGR);
@@ -15,10 +20,11 @@ void plot_map(cv::Mat img, cv::Mat mapx, cv::Mat mapy,int is_save_location_map) 
         }
     }
     // ±£¥Ê
+    color_img *= 2;
     if (is_save_location_map != 0) {
         std::vector<int> saving_params;
         saving_params.push_back(cv::IMWRITE_PNG_COMPRESSION);
         saving_params.push_back(5); // png—πÀı¬ 
-        cv::imwrite("location_map.png", color_img, saving_params);
+        cv::imwrite("location_map_"+color+".png", color_img, saving_params);
     }
 }

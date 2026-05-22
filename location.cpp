@@ -1,10 +1,9 @@
 ﻿# include "location.h"
-# include "utils.h"
-
 
 
 cv::Mat _fourier_t(const cv::Mat location_map_mono_f32) {
 	cv::Mat f_map;
+
 	cv::dft(location_map_mono_f32, f_map, cv::DFT_COMPLEX_OUTPUT);
 
 	cv::Mat magnitude;  // 幅值矩阵（单通道）
@@ -14,8 +13,6 @@ cv::Mat _fourier_t(const cv::Mat location_map_mono_f32) {
 
 	// magnitude = sqrt(实部² + 虚部²)
 	cv::magnitude(planes[0], planes[1], magnitude);
-
-	magnitude = magnitude;
 
 	//shift
 	cv::Mat f_map_shift = cv::Mat::zeros(magnitude.size(), magnitude.type());
@@ -92,15 +89,10 @@ cv::Mat _erode(cv::Mat img_ori, const double mapping) {
 
 	dilate(img, dst, kernel); // 膨胀操作等价于最大值滤波
 
-	// 最大值差异寻找mask-m1
-	//img *=1.1;
-	//dst += 2;
-	//cv::compare(img, dst, dst1, cv::CMP_GT);
-
 	//最大值差异寻找mask-m2
 	cv::Mat mask;
 	mask.create(img.size(), img.type());
-	img -= 10;  //外部噪声的先验阈值
+	img -= 10;  //外部噪声的先验阈值 changeable
 	dst -= 10;
 	cv::Mat zero_img = cv::Mat::zeros(img.size(), img.type());
 	cv::compare(img, zero_img, mask, cv::CMP_EQ);
@@ -109,7 +101,54 @@ cv::Mat _erode(cv::Mat img_ori, const double mapping) {
 	return dst1;
 }
 
-cv::Mat _solo_pixels(const cv::Mat location_map_mono, const double mapping) {
+cv::Mat _erode1(cv::Mat img_ori, const double mapping, std::string color) {
+	// 指针遍历，确保内存连续
+	cv::Mat dst;
+	cv::Mat dst1;
+	cv::Mat img;
+	dst.create(img.size(), img.type());
+	img.create(img_ori.size(), img_ori.type());
+	if (img_ori.isContinuous()) {
+		// continuous
+		img = img_ori;
+	}
+	else {
+		// non continuous
+		img = img_ori.clone();
+	}
+
+
+	// 由于出现多点最大值相同导致单像素多特征点，进行腐蚀
+	if (color == "R" || color == "B") {
+		cv::Mat kernel_erode = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+		cv::erode(img, img, kernel_erode);
+	}
+
+
+	//cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(mapping+1, mapping+1)); // rect
+	cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(mapping+1, mapping+1)); // circle
+
+	dilate(img, dst, kernel); // 膨胀操作等价于最大值滤波
+
+	//最大值差异寻找mask-m2
+	cv::Mat mask,mask1;
+	mask.create(img.size(), img.type());
+	mask1.create(img.size(), img.type());
+	img -= 2560;  //外部噪声的先验阈值(8bit:10,12bit:160,16bit:2560) changeable
+	dst -= 2560;
+	cv::Mat zero_img = cv::Mat::zeros(img.size(), img.type());
+
+	mask = img.clone();
+	cv::compare(img, zero_img, mask, cv::CMP_EQ);
+	cv::compare(img, dst, mask1, cv::CMP_EQ);
+	cv::subtract(mask1, mask, mask1);
+
+	return mask1;
+}
+
+
+cv::Mat _solo_pixels_color(const cv::Mat location_map_mono, const double mapping, std::string color) {
+	// slol_pixels for color camera
 	// create kernel
 	int kernel_length = ceil(mapping * 2);
 	if (kernel_length % 2 == 0) {
@@ -126,6 +165,42 @@ cv::Mat _solo_pixels(const cv::Mat location_map_mono, const double mapping) {
 	cv::Mat img_blur;
 	cv::Mat img_feature_3;
 	cv::Mat img_feature_4;
+
+
+	//cv::filter2D(location_map_mono, img_feature_1, -1, _kernel);
+	//cv::GaussianBlur(location_map_mono, img_blur, cv::Size(11,11), 2);
+
+	//cv::Mat img_feature_2 = img_feature_1 - 0.5*img_blur;
+	//img_feature_2 = location_map_mono - img_blur;
+
+	//连通域收缩
+	//img_feature_3 = _erode(img_feature_2, mapping);
+	img_feature_4 = _erode1(location_map_mono, mapping, color);
+
+
+	return img_feature_4;
+}
+
+cv::Mat _solo_pixels_mono(const cv::Mat location_map_mono, const double mapping, std::string color) {
+	// slol_pixels for mono camera
+	// create kernel
+	int kernel_length = ceil(mapping * 2);
+	if (kernel_length % 2 == 0) {
+		kernel_length += 1;
+	}
+	cv::Mat _kernel = cv::Mat::zeros(int(kernel_length), int(kernel_length), CV_32F);
+	double kernel_data = (1 / double(kernel_length * kernel_length - 1));
+	_kernel.setTo(-kernel_data);
+	_kernel.ptr<float>(int(kernel_length / 2))[int(kernel_length / 2)] = 1.0f;
+
+	// convlution
+	//cv::Mat img_feature_1;
+	cv::Mat img_feature_2;
+	cv::Mat img_blur;
+	cv::Mat img_feature_3;
+	cv::Mat img_feature_4;
+
+
 	//cv::filter2D(location_map_mono, img_feature_1, -1, _kernel);
 	cv::GaussianBlur(location_map_mono, img_blur, cv::Size(11,11), 2);
 
@@ -134,6 +209,8 @@ cv::Mat _solo_pixels(const cv::Mat location_map_mono, const double mapping) {
 
 	//连通域收缩
 	img_feature_3 = _erode(img_feature_2, mapping);
+	//img_feature_4 = _erode1(location_map_mono, mapping, color);
+
 
 	return img_feature_3;
 }
@@ -284,7 +361,17 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 	//location_tolerate_pixels[0] -> 横向，[1]纵向
 
 	//loop step
-	int search_step = mapping; // 探索步进
+	//int search_step = 0;
+	//if (mapping > 8) {
+	//	search_step = round(mapping);
+	//}if (mapping > 6) {
+	//	search_step = 7;
+	//}if (mapping > 4) {
+	//	search_step = 5;
+	//}if (mapping > 3) {
+	//	search_step = 3;
+	//}
+	int search_step = round(mapping); // 探索步进
 	int search_size = 3; // 搜索区域大小
 
 	//temp inital
@@ -588,34 +675,46 @@ void _post_process_for_map(cv::Mat solo_pixels_mat, cv::Mat& mapx, cv::Mat& mapy
 	mapy = map_roi_y;
 }
 
-void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& mapping, int panel_res_rows,int panel_res_cols,std::string color, int is_save_location_map, std::array<int, 3> location_setting_pixels) {
+void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& mapping, int panel_res_rows,int panel_res_cols,std::string color, int is_save_location_map, std::array<int, 3> location_setting_pixels, bool is_subimage_W) {
 	cv::Mat map;
-	cv::Mat location_map_mono_f32;
+	cv::Mat location_map_mono_f32_roi;
+	cv::Mat solo_pixels_mat;
 
 	// fourier transfrom
-	//cv::cvtColor(location_map, location_map_mono, cv::COLOR_BGR2GRAY);
-	location_map.convertTo(location_map_mono_f32, CV_32F);
-	cv::Mat f_map_shift = _fourier_t(location_map_mono_f32);
+	// less roi for dft, speed up!
+	std::cout << get_time() << ":Fourier tansform" << std::endl;
+	int r = location_map.rows/2;
+	int c = location_map.cols/2;
+	location_map(cv::Range(r-500,r+500), cv::Range(c - 500, c + 500)).convertTo(location_map_mono_f32_roi, CV_32FC1);
+	cv::Mat f_map_shift = _fourier_t(location_map_mono_f32_roi);
 
 	// get mapping
+	std::cout << get_time() << ":get mapping" << std::endl;
 	mapping = _get_mapping(f_map_shift);
 	if (location_setting_pixels[2] > 0){
 		mapping = location_setting_pixels[2];
 	}
 
 	// pixels solo
-	cv::Mat solo_pixels_mat = _solo_pixels(location_map, mapping);
+	std::cout << get_time() << ":pixels solo" << std::endl;
+	if (is_subimage_W) {
+		solo_pixels_mat = _solo_pixels_color(location_map, mapping, color);
+	}
+	else {
+		solo_pixels_mat = _solo_pixels_mono(location_map, mapping, color);
+	}
+	
 
 	// find the first pixel
 	int x, y;
+	std::cout << get_time() << ":find the first pixel" << std::endl;
 	_find_first_pixel(solo_pixels_mat, x, y);
 
 	// loop in all pixels
+	std::cout << get_time() << ":loop in all pixels" << std::endl;
 	_loop_all_pixles(solo_pixels_mat, x, y, mapx, mapy, mapping, panel_res_rows, panel_res_cols, color, location_setting_pixels);
 
 	// post process for map
+	std::cout << get_time() << ":post process for map" << std::endl;
 	_post_process_for_map(solo_pixels_mat, mapx, mapy, panel_res_rows, panel_res_cols);
-
-	// plotmap
-	plot_map(location_map, mapx, mapy, is_save_location_map);
 }

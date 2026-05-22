@@ -75,10 +75,64 @@ void fft_shift(cv::Mat& src, cv::Mat& dst){
     temp.copyTo(q3);
 }
 
-
-
-void de_moire(cv::Mat& csv) {
+double moire_detector_2(cv::Mat& csv) //中频最高值方法
+{
+    double moire_num = 0;
+    // check if moire exist
     cv::Mat img_fft;
+    cv::dft(csv, img_fft, CV_HAL_DFT_COMPLEX_OUTPUT);
+    //split
+    cv::Mat planes[2];
+    cv::split(img_fft, planes);
+
+    //calculation abs
+    cv::Mat img_fft_abs;
+    cv::magnitude(planes[0], planes[1], img_fft_abs);
+    img_fft_abs /= 10;
+    img_fft_abs /= 10;
+
+    //fftshift
+    cv::Mat img_fft_shift;
+    fft_shift(img_fft_abs, img_fft_shift);
+
+    //de-center
+    int row, col, mid_row, mid_col, step_row, step_col; // row and col, center row and center col, min search step
+    row = int(img_fft_shift.rows);
+    col = int(img_fft_shift.cols);
+    mid_row = int(row / 2);
+    mid_col = int(col / 2);
+    step_row = int(row / 10); // changeable
+    step_col = int(col / 10);
+
+    cv::Rect center_rect(mid_col - step_col, mid_row - step_row, 2 * step_col, 2 * step_row);
+    img_fft_shift(center_rect) = cv::Scalar::all(0);
+
+    //denoise
+    cv::Mat img_fft_shift_show = img_fft_shift / 50;
+    int count_non_img = cv::countNonZero(img_fft_shift);
+    double noise_val = cv::sum(img_fft_shift)[0] / count_non_img;
+    //img_fft_shift -= 20 * noise_val;
+
+    //////erode and imdilter
+    //cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(4, 4));
+    //cv::morphologyEx(img_fft_shift, img_fft_shift, cv::MORPH_CLOSE, kernel);
+
+    //count
+    int high_val_num = cv::countNonZero(img_fft_shift > noise_val);
+    double moire_ratio = (double)high_val_num/ count_non_img;
+
+    ////decide
+    //bool if_demoire_exist = false;
+    //if (high_val_num > 30) {
+    //    if_demoire_exist = true;
+    //}
+
+    return moire_ratio;
+}
+
+void de_moire(cv::Mat& csv, double threshold_coef, double blur_strength) {
+    cv::Mat img_fft;
+    csv.convertTo(csv, CV_32FC1);
     cv::dft(csv, img_fft, CV_HAL_DFT_COMPLEX_OUTPUT);
     //split
     cv::Mat planes[2];
@@ -93,6 +147,8 @@ void de_moire(cv::Mat& csv) {
     //fftshift
     cv::Mat img_fft_shift;
     fft_shift(img_fft_abs, img_fft_shift);
+    cv::Mat csv1 = csv / 3;
+    cv::Mat img_fft_shift1 = img_fft_shift / 10;
 
     //de-center
     int row, col, mid_row, mid_col, step_row, step_col; // row and col, center row and center col, min search step
@@ -113,14 +169,114 @@ void de_moire(cv::Mat& csv) {
     //bin
     double threshold;
     cv::minMaxLoc(img_fft_shift, NULL, &threshold, NULL, NULL);
-    threshold *= 0.2; //changeable
+    //threshold *= 0.05; //changeable - important changebale point
+    threshold *= threshold_coef;
     cv::Mat mask;
     cv::threshold(img_fft_shift, mask, threshold, 1, cv::THRESH_BINARY);
 
-    //Gass and normalization
-    cv::GaussianBlur(mask, mask, cv::Size(5, 5), 1);
+    //Gass and normalization - def a blur strength: blur_strength
+    int ksize = blur_strength * 2 + 1;
+    cv::GaussianBlur(mask, mask, cv::Size(ksize, ksize), 0); // important changebale point (5,5) 1
     mask = 1 - mask;
     cv::pow(mask, 5, mask); //幂次增强对比度
+    //mask ifftshift
+    cv::Mat mask_ifft;
+    fft_shift(mask, mask_ifft);
+    //mask * img
+    cv::Mat img_fft_final, mask_ifft_2c;
+    cv::Mat mask_ifft_2c_planes[] = { mask_ifft ,mask_ifft };
+    cv::merge(mask_ifft_2c_planes, 2, mask_ifft_2c);
+    cv::multiply(img_fft, mask_ifft_2c, img_fft_final);
+
+    //ifft
+    cv::Mat img_ifft;
+    cv::idft(img_fft_final, img_ifft, cv::DFT_SCALE | cv::DFT_REAL_OUTPUT);
+    img_ifft.copyTo(csv);
+}
+
+void de_moire_low(cv::Mat& csv, double threshold_coef, double blur_strength) {
+    cv::Mat img_fft;
+    csv.convertTo(csv, CV_32FC1);
+    cv::dft(csv, img_fft, CV_HAL_DFT_COMPLEX_OUTPUT);
+    //split
+    cv::Mat planes[2];
+    cv::split(img_fft, planes);
+
+    //calculation abs
+    cv::Mat img_fft_abs;
+    cv::magnitude(planes[0], planes[1], img_fft_abs);
+    img_fft_abs /= 10;
+    img_fft_abs /= 10;
+
+    //fftshift
+    cv::Mat img_fft_shift;
+    fft_shift(img_fft_abs, img_fft_shift);
+    cv::Mat csv1 = csv / 3;
+    cv::Mat img_fft_shift1 = img_fft_shift / 20;
+
+    ////de-center
+    //int row, col, mid_row, mid_col, step_row, step_col; // row and col, center row and center col, min search step
+    //row = int(img_fft_shift.rows);
+    //col = int(img_fft_shift.cols);
+    //mid_row = int(row / 2);
+    //mid_col = int(col / 2);
+    //step_row = int(row / 12); // changeable
+    //step_col = int(col / 12);
+
+    //cv::Rect center_rect(mid_col - step_col, mid_row - step_row, 2 * step_col, 2 * step_row);
+    //cv::Mat mask1 = cv::Mat::zeros(img_fft_shift.size(), CV_8U);
+    //cv::rectangle(mask1, center_rect, cv::Scalar(255), -1);  // -1 表示填充
+    //cv::bitwise_not(mask1, mask1);
+    //img_fft_shift.setTo(cv::Scalar::all(0), mask1);
+
+    ////img erode
+    ////cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3)); // changeable
+    ////cv::Mat small_kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2, 2));
+    ////cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+    ////cv::erode(img_fft_shift, img_fft_shift, kernel);
+
+    //cv::Mat kernel = (cv::Mat_<uchar>(3, 3) <<
+    //    0, 1, 0,
+    //    1, 1, 1,
+    //    0, 1, 0
+    //    );
+
+    //// 执行最小腐蚀
+    //cv::erode(img_fft_shift, img_fft_shift, kernel);
+
+    ////bin
+    //double threshold;
+    //cv::minMaxLoc(img_fft_shift, NULL, &threshold, NULL, NULL);
+    ////threshold *= 0.05; //changeable - important changebale point
+    //threshold *= threshold_coef;
+    //cv::Mat mask;
+    //cv::threshold(img_fft_shift, mask, threshold, 1, cv::THRESH_BINARY);
+
+    ////Gass and normalization - def a blur strength: blur_strength
+    //int ksize = blur_strength * 2 + 1;
+    //cv::GaussianBlur(mask, mask, cv::Size(ksize, ksize), 0); // important changebale point (5,5) 1
+    //mask = 1 - mask;
+    //cv::pow(mask, 5, mask); //幂次增强对比度
+    // 
+    // 
+    
+
+    cv::Mat mask = cv::Mat::ones(img_fft_shift1.size(), CV_32FC1);
+
+    //左右
+    cv::Rect r1(320, 1371, 6, 6);
+    mask(r1) = 0.1f;
+
+    cv::Rect r2(304, 1372, 6, 6);
+    mask(r2) = 0.1f;
+
+    //上下
+    cv::Rect r3(312, 1354, 7, 8);
+    mask(r3) = 0.1f;
+
+    cv::Rect r4(314, 1388, 7, 8);
+    mask(r4) = 0.1f;
+
     //mask ifftshift
     cv::Mat mask_ifft;
     fft_shift(mask, mask_ifft);
