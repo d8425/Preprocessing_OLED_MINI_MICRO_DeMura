@@ -39,13 +39,20 @@ double _get_mapping(const cv::Mat& f_map_shift) {
 	cv::Mat col_roi;
 
 	// 剔除中心区域 (剔除中心1/3处)
-	int part = 3; //将图像横纵分为n块
-	f_map_shift(cv::Range(0, int(rows/ part)), cv::Range((cols/2)-500, (cols / 2) + 500)).copyTo(row_roi);  // 先验
-	f_map_shift(cv::Range((rows/2)-500, (rows / 2) + 500), cv::Range(0,int(cols/ part))).copyTo(col_roi);   // 先验
+	//int part = 8; //将图像横纵分为n块
+	//f_map_shift(cv::Range(0, int(rows/ part)), cv::Range((cols/2)-500, (cols / 2) + 500)).copyTo(row_roi);  // 先验
+	//f_map_shift(cv::Range((rows/2)-500, (rows / 2) + 500), cv::Range(0,int(cols/ part))).copyTo(col_roi);   // 先验
+
+	//f_map_shift(0,0,rows,cols/2-50).copyTo(row_roi);  // 先验
+	//f_map_shift(cv::Range((rows / 2) - 500, (rows / 2) + 500), cv::Range(0, int(cols / part))).copyTo(col_roi);   // 先验
+
+	//f_map_shift(cv::Range((rows / 2) - 50, (rows / 2) + 50), cv::Range((cols / 2) - 50, (cols / 2) + 50)) = 0;
+	f_map_shift(cv::Range(0, rows), cv::Range(0, (cols / 2) - 50)).copyTo(row_roi);
+	f_map_shift(cv::Range(0, rows/2-50), cv::Range(0, cols)).copyTo(col_roi);
 
 	// max brightness area
-	double unused; 
-	cv::Point row_roi_max_loc; 
+	double unused;
+	cv::Point row_roi_max_loc;
 	cv::Point col_roi_max_loc;
 
 	cv::minMaxLoc(row_roi, &unused, nullptr, nullptr, &row_roi_max_loc);
@@ -53,8 +60,8 @@ double _get_mapping(const cv::Mat& f_map_shift) {
 
 	// 欧式距离计算
 	double diff_point_center_row_1 = row_roi_max_loc.y - int(rows / 2);
-	double diff_point_center_col_1 = row_roi_max_loc.x - int(row_roi.cols / 2);
-	double diff_point_center_row_2 = col_roi_max_loc.y - int(col_roi.rows / 2);
+	double diff_point_center_col_1 = row_roi_max_loc.x - int(cols / 2);
+	double diff_point_center_row_2 = col_roi_max_loc.y - int(rows / 2);
 	double diff_point_center_col_2 = col_roi_max_loc.x - int(cols / 2);
 
 
@@ -356,7 +363,7 @@ float* get_ptr_F32(cv::Mat img, int x, int y) { // 这里使用的指针是float
 	return reinterpret_cast<float*>(img.data + y * img.step) + x;
 }
 
-void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::Mat& mapy, double mapping,double panel_res_rows, double panel_res_cols,std::string color, std::array<int,3> location_setting_pixels) {
+void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::Mat& mapy, double mapping,double panel_res_rows, double panel_res_cols,std::string color, std::array<int,4> location_setting_pixels) {
 	//out-location setting
 	//location_tolerate_pixels[0] -> 横向，[1]纵向
 
@@ -372,7 +379,16 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 	//	search_step = 3;
 	//}
 	int search_step = round(mapping); // 探索步进
-	int search_size = 3; // 搜索区域大小
+
+	int search_size = 0;
+	if (mapping > 5) {
+		search_size = 5; // 搜索区域大小
+	}
+	else {
+		search_size = 3;
+	}
+		
+	
 
 	//temp inital
 	int current_x_left = x;
@@ -565,7 +581,27 @@ __declspec(noinline) void _line_interpolation(cv::Mat& line) {
 	}
 }
 
-void _post_process_for_map(cv::Mat solo_pixels_mat, cv::Mat& mapx, cv::Mat& mapy, int panel_res_rows, int panel_res_cols) {
+cv::Mat _line_interpolation_inner(cv::Mat line) {
+	//将line中黑区进行插值填充-仅做内插
+	std::vector<cv::Point> nonZeroPoints;
+	cv::findNonZero(line, nonZeroPoints);
+	for (int ind = 0; ind < (int)nonZeroPoints.size() - 1; ind++) {
+		// 多个非0点遍历
+		int pos1 = nonZeroPoints[ind].y;
+		int pos2 = nonZeroPoints[ind + 1].y;
+		int diff_between_two_point = pos2 - pos1;
+		int val1 = line.at<int>(pos1,0);
+		int val2 = line.at<int>(pos2, 0);
+		for (int ind_s = 1; ind_s < diff_between_two_point; ind_s++) {
+			// 索引n处非0点与n+1处非0点，空值遍历赋值
+			float ratio = (float)ind_s / diff_between_two_point;
+			line.at<int>(pos1 + ind_s,0) = (int)(val1 * (1.0f - ratio) + val2 * ratio);
+		}
+	}
+	return line;
+}
+
+void _post_process_for_map(cv::Mat solo_pixels_mat, cv::Mat& mapx, cv::Mat& mapy, int panel_res_rows, int panel_res_cols, std::array<int, 4> location_setting_pixels) {
 	//初始化ROI坐标
 	int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
 	cv::Mat map8U;
@@ -671,11 +707,72 @@ void _post_process_for_map(cv::Mat solo_pixels_mat, cv::Mat& mapx, cv::Mat& mapy
 		_line_interpolation(line);
 		line.copyTo(map_roi_y(cv::Range(0, rows), cv::Range(c, c + 1)));
 	}
-	mapx = map_roi_x;
-	mapy = map_roi_y;
+	mapx = map_roi_x.clone();
+	mapy = map_roi_y.clone();
+
+	//location interval (original point: panel right top)
+	int location_interval = location_setting_pixels[3];
+	if (location_interval > 0) {
+		map_roi_x = 0;
+		map_roi_y = 0;
+		location_interval += 1;
+		for (int r = 0; r < int(rows/ location_interval); r++) {
+			for (int c = 0; c < int(cols / location_interval); c++) {
+				if (mapx.at<float>(r, c) > 0 && r * location_interval<=rows && c * location_interval<=cols) {
+					map_roi_x.at<float>(r* location_interval, c* location_interval) = mapx.at<float>(r, c);
+					map_roi_y.at<float>(r * location_interval, c * location_interval) = mapy.at<float>(r, c);
+					r += 0;
+					c += 0;
+				}
+			}
+		}
+
+		//map_roi_x row填充
+		for (int c = 0; c < map_roi_x.cols; c++) {
+			cv::Mat line;
+			line.create(map_roi_x.rows, 1, map_roi_x.type());
+			map_roi_x(cv::Range(0, rows), cv::Range(c, c + 1)).copyTo(line);
+			_line_interpolation_inner(line);
+			line.copyTo(map_roi_x(cv::Range(0, rows), cv::Range(c, c + 1)));
+		}
+
+		//map_roi_y row填充
+		for (int c = 0; c < map_roi_y.cols; c++) {
+			cv::Mat line;
+			line.create(map_roi_y.rows, 1, map_roi_y.type());
+			map_roi_y(cv::Range(0, rows), cv::Range(c, c + 1)).copyTo(line);
+			_line_interpolation_inner(line);
+			line.copyTo(map_roi_y(cv::Range(0, rows), cv::Range(c, c + 1)));
+		}
+
+		//map_roi_x col填充
+		for (int c = 0; c < map_roi_x.rows; c++) {
+			cv::Mat line;
+			line.create(1, map_roi_x.cols, map_roi_x.type());
+			map_roi_x(cv::Range(c, c + 1), cv::Range(0, cols)).copyTo(line);
+			cv::transpose(line, line);
+			_line_interpolation_inner(line);
+			cv::transpose(line, line);
+			line.copyTo(map_roi_x(cv::Range(c, c + 1), cv::Range(0, cols)));
+		}
+
+		//map_roi_y col填充
+		for (int c = 0; c < map_roi_y.rows; c++) {
+			cv::Mat line;
+			line.create(1, map_roi_y.cols, map_roi_y.type());
+			map_roi_y(cv::Range(c, c + 1), cv::Range(0, cols)).copyTo(line);
+			cv::transpose(line, line);
+			_line_interpolation_inner(line);
+			cv::transpose(line, line);
+			line.copyTo(map_roi_y(cv::Range(c, c + 1), cv::Range(0, cols)));
+		}
+
+	}
+	mapx = map_roi_x.clone();
+	mapy = map_roi_y.clone();
 }
 
-void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& mapping, int panel_res_rows,int panel_res_cols,std::string color, int is_save_location_map, std::array<int, 3> location_setting_pixels, bool is_subimage_W) {
+void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& mapping, int panel_res_rows,int panel_res_cols,std::string color, int is_save_location_map, std::array<int, 4> location_setting_pixels, bool is_subimage_W) {
 	cv::Mat map;
 	cv::Mat location_map_mono_f32_roi;
 	cv::Mat solo_pixels_mat;
@@ -686,7 +783,13 @@ void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& m
 	int r = location_map.rows/2;
 	int c = location_map.cols/2;
 	location_map(cv::Range(r-500,r+500), cv::Range(c - 500, c + 500)).convertTo(location_map_mono_f32_roi, CV_32FC1);
+
+	//cv::Mat kernel_erode = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
+	//cv::erode(location_map_mono_f32_roi, location_map_mono_f32_roi, kernel_erode);
+
 	cv::Mat f_map_shift = _fourier_t(location_map_mono_f32_roi);
+	//location_map_mono_f32_roi = location_map_mono_f32_roi / 80000;
+	//f_map_shift = f_map_shift / 100;
 
 	// get mapping
 	std::cout << get_time() << ":get mapping" << std::endl;
@@ -716,5 +819,5 @@ void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& m
 
 	// post process for map
 	std::cout << get_time() << ":post process for map" << std::endl;
-	_post_process_for_map(solo_pixels_mat, mapx, mapy, panel_res_rows, panel_res_cols);
+	_post_process_for_map(solo_pixels_mat, mapx, mapy, panel_res_rows, panel_res_cols, location_setting_pixels);
 }

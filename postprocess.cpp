@@ -211,8 +211,8 @@ void de_moire_low(cv::Mat& csv, double threshold_coef, double blur_strength) {
     //fftshift
     cv::Mat img_fft_shift;
     fft_shift(img_fft_abs, img_fft_shift);
-    cv::Mat csv1 = csv / 3;
-    cv::Mat img_fft_shift1 = img_fft_shift / 20;
+    cv::Mat csv1 = csv / 700;
+    cv::Mat img_fft_shift1 = img_fft_shift / 300;
 
     ////de-center
     //int row, col, mid_row, mid_col, step_row, step_col; // row and col, center row and center col, min search step
@@ -263,18 +263,32 @@ void de_moire_low(cv::Mat& csv, double threshold_coef, double blur_strength) {
 
     cv::Mat mask = cv::Mat::ones(img_fft_shift1.size(), CV_32FC1);
 
+    ////左右
+    //cv::Rect r1(320, 1371, 6, 6);
+    //mask(r1) = 0.1f;
+
+    //cv::Rect r2(304, 1372, 6, 6);
+    //mask(r2) = 0.1f;
+
+    ////上下
+    //cv::Rect r3(312, 1354, 7, 8);
+    //mask(r3) = 0.1f;
+
+    //cv::Rect r4(314, 1388, 7, 8);
+    //mask(r4) = 0.1f;
+
     //左右
-    cv::Rect r1(320, 1371, 6, 6);
+    cv::Rect r1(294, 1317, 6, 6);
     mask(r1) = 0.1f;
 
-    cv::Rect r2(304, 1372, 6, 6);
+    cv::Rect r2(311, 1318, 6, 6);
     mask(r2) = 0.1f;
 
     //上下
-    cv::Rect r3(312, 1354, 7, 8);
+    cv::Rect r3(301, 1297, 6, 6);
     mask(r3) = 0.1f;
 
-    cv::Rect r4(314, 1388, 7, 8);
+    cv::Rect r4(301, 1337, 6, 6);
     mask(r4) = 0.1f;
 
     //mask ifftshift
