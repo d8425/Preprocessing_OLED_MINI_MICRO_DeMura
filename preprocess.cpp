@@ -91,6 +91,7 @@ std::vector<float> parse2Float(const std::string& str) {
 }
 
 void img_flip(cv::Mat& img, int position) {
+    // right side finding first
 	// - ROTATE_90_CLOCKWISE：顺时针90°
 	// - ROTATE_180：180°
 	// - ROTATE_90_COUNTERCLOCKWISE：逆时针90°
@@ -105,11 +106,32 @@ void img_flip(cv::Mat& img, int position) {
         cv::rotate(img, img, cv::ROTATE_90_CLOCKWISE);
     }
     if (position == 4) {
-        //正角度
+        //stable
     }
     else {
-        std::cerr << "position需为1-4中数，1为正角度panel，2为顺时针90度，后续依次" << std::endl;
+        std::cerr << "position selection error" << std::endl;
     }
+
+    //// left side finding first
+    //// - ROTATE_90_CLOCKWISE：顺时针90°
+    //// - ROTATE_180：180°
+    //// - ROTATE_90_COUNTERCLOCKWISE：逆时针90°
+    ////cv::rotate(img, img, 0);
+    //if (position == 1) {
+    //    cv::rotate(img, img, cv::ROTATE_90_CLOCKWISE);
+    //}
+    //if (position == 2) {
+    //    //stable
+    //}
+    //if (position == 3) {
+    //    cv::rotate(img, img, cv::ROTATE_90_COUNTERCLOCKWISE);
+    //}
+    //if (position == 4) {
+    //    cv::rotate(img, img, cv::ROTATE_180);
+    //}
+    //else {
+    //    std::cerr << "position selection error" << std::endl;
+    //}
 }
 
 void string_split(std::string line, std::vector<std::string>& list, char symbol) {
@@ -155,7 +177,7 @@ cv::Mat preprocess4color_location_map(cv::Mat location_map, std::string single_c
 
 void img_calibration(cv::Mat& img, cv::Mat& ffc_calibration_coef,  int img_idx) {
     // 1.FFC(flat filed correction)
-    // *校正方法分为两种，1.有标定数据的校准(暂无自用相机，不做) 2.无标准标定的趋近标定(建模相关镜头的衰减模型)
+    // 1: exist calibration data(unavailable)  2: physics model for ffc(availavle)
     // assuming FFC model fit the physics formula : I(r) = I(0) * (cos(δ(r)) ^ 4) * V(r)
     // which I(r) : calibrated value, I(0) : original value, r : distance from
     // current pixel to middle point, cos(δ(r)) : physics prior formula for
@@ -165,7 +187,10 @@ void img_calibration(cv::Mat& img, cv::Mat& ffc_calibration_coef,  int img_idx) 
     // FFC SPEED UP --------------------------------------------------------------------------------------------START
     // FFC SPEED UP --------------------------------------------------------------------------------------------END
 
-
+    bool is_16UC1 = 0;
+    if (img.type() == CV_16UC1) {
+        is_16UC1 = 1;
+    }
 
     // FFC --------------------------------------------------------------------------------------------START
     if (img_idx == 0) {
@@ -228,7 +253,15 @@ void img_calibration(cv::Mat& img, cv::Mat& ffc_calibration_coef,  int img_idx) 
     // FFC calibration
     img.convertTo(img, CV_32FC1);
     cv::multiply(img, ffc_calibration_coef, img);
-    img.convertTo(img, CV_8UC1);
+    cv::Mat dst_16U;
+    if (is_16UC1){
+        img.convertTo(dst_16U, CV_16UC1,1.0);
+        img = dst_16U;
+    }
+    else {
+        img.convertTo(img, CV_8UC1,1.0,0.0);
+    }
+    
 
     // FFC --------------------------------------------------------------------------------------------END
 

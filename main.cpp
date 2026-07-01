@@ -41,15 +41,17 @@ int main()
         int position = std::stoi(param["Database"]["position"]);
 
         // location setting
-        int location_mapping = stoi(param["Database"]["location_mapping"]);
+        std::vector<double> location_mapping;
+        string_split_num(param["Database"]["location_mapping"], location_mapping, ',');
         int location_rows_tolerate_pixels = stoi(param["Database"]["location_rows_tolerate_pixels"]);
         int location_cols_tolerate_pixels = stoi(param["Database"]["location_cols_tolerate_pixels"]);
         int location_interval = stoi(param["Database"]["location_interval"]);
-        std::array<int, 4> location_setting_pixels = { location_rows_tolerate_pixels, location_cols_tolerate_pixels, location_mapping, location_interval };
+        std::array<int, 6> location_setting_pixels = { location_rows_tolerate_pixels, location_cols_tolerate_pixels, location_mapping[0], location_mapping[1], location_mapping[2], location_interval};
 
         // brightness setting
-        int brightness_mapping = stoi(param["Database"]["brightness_mapping"]);
-        std::array<int, 1> brightness_setting = { brightness_mapping };
+        std::vector<double> brightness_mapping;
+        string_split_num(param["Database"]["brightness_mapping"], brightness_mapping, ',');
+        std::array<double, 3> brightness_setting = { brightness_mapping[0], brightness_mapping[1], brightness_mapping[2] };
 
         // setting transformation
         std::vector<std::string> files_index, color_list_sub, single_img_name, exp_list,gain_list;
@@ -63,9 +65,10 @@ int main()
         int is_ffc = std::stoi(param["Preprocess"]["ffc"]);
         
         // postprocess
-        std::vector<double> is_demoire;
+        std::vector<double> is_demoire, is_curved_corr;
         int is_hole_corner_filling = std::stoi(param["Process"]["hole_corner_filling"]); // hole与corner填充
         string_split_num(param["Process"]["de_moire"], is_demoire, ',');
+        string_split_num(param["Process"]["curved_corr"], is_curved_corr, ',');
 
 
         // tools
@@ -159,6 +162,7 @@ int main()
                 is_subimage_W = 1;
             }
             if (camera_grab_type == "C_L_W_G" && single_color != "W") {
+                img *= 12;
                 color2mono(img, imgc);
                 size_t ind = RGB.find(single_color);
                 img = imgc[ind];
@@ -201,8 +205,8 @@ int main()
                     //else {
                     //    location_map = img;
                     //}
-                    location_map = img.clone();    
-                    get_map(location_map, mapx, mapy, mapping, panel_res_rows, panel_res_cols, single_color, is_save_location_map, location_setting_pixels, is_subimage_W);
+                    location_map = img.clone();
+                    get_map(location_map, mapx, mapy, mapping, panel_res_rows, panel_res_cols, single_color, is_save_location_map, location_setting_pixels, is_subimage_W, camera_grab_type);
                     plot_map(img, mapx, mapy, single_color, is_save_location_map);
                     std::cout << get_time() << sub_name + ":location end" << std::endl;
                     // mono+color map store
@@ -213,7 +217,7 @@ int main()
                 // 5.image get brt
                 cv::Mat csv;
                 std::cout << get_time() << sub_name + ":getting brightness" << std::endl;
-                csv = get_brt(img, map_store[sub_img_idx*2], map_store[sub_img_idx*2+1], mapping, panel_res_rows, panel_res_cols, brightness_setting);
+                csv = get_brt(img, map_store[sub_img_idx*2], map_store[sub_img_idx*2+1], mapping, panel_res_rows, panel_res_cols, single_color, brightness_setting);
                 csv = csv / (std::stoi(exp_list[img_idx]) * std::stoi(gain_list[img_idx]));
                 std::cout << get_time() << sub_name + ":getting brightness end" << std::endl;
 
@@ -228,6 +232,11 @@ int main()
                 if (is_demoire[0] != 0) {
                     de_moire(csv, is_demoire[1], is_demoire[2]);
                     std::cout << get_time() << sub_name + ":de-moire" << std::endl;
+                }
+                if (is_curved_corr[0] != 0) {
+                    //csv /= 80;
+                    curved_corr(csv, is_curved_corr[0], is_curved_corr[1], single_color);
+                    std::cout << get_time() << sub_name + ":curved corr" << std::endl;
                 }
 
                 // 7.AOI

@@ -107,15 +107,16 @@ void _get_brightness_cuda(cv::Mat img, cv::Mat mapx, cv::Mat mapy,
     }
 }
 
-cv::Mat get_brt(const cv::Mat& img, cv::Mat& mapx, cv::Mat& mapy, double mapping, double panel_rows, double panel_cols, std::array<int, 1> brightness_setting) {
+cv::Mat get_brt(const cv::Mat& img, cv::Mat& mapx, cv::Mat& mapy, double mapping, double panel_rows, double panel_cols, std::string color, std::array<double, 3> brightness_setting) {
     //check cuda is available
     int cuda_device_count = 0;
     cudaError_t err = cudaGetDeviceCount(&cuda_device_count);
 
     //get brightness kernel
     cv::Mat kernel;
-    if (brightness_setting[0] != 0) {
-        mapping = brightness_setting[0];
+    size_t color_index = std::string("RGB").find(color);
+    if (brightness_setting[color_index] != 0) {
+        mapping = brightness_setting[color_index];
     }
 
     kernel = _get_kernel(mapping);

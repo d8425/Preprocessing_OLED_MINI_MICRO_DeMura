@@ -161,10 +161,10 @@ cv::Mat _solo_pixels_color(const cv::Mat location_map_mono, const double mapping
 	if (kernel_length % 2 == 0) {
 		kernel_length += 1;
 	}
-	cv::Mat _kernel = cv::Mat::zeros(int(kernel_length), int(kernel_length), CV_32F);
-	double kernel_data = (1 / double(kernel_length * kernel_length - 1));
-	_kernel.setTo(-kernel_data);
-	_kernel.ptr<float>(int(kernel_length/2))[int(kernel_length/2)] = 1.0f;
+	//cv::Mat _kernel = cv::Mat::zeros(int(kernel_length), int(kernel_length), CV_32F);
+	//double kernel_data = (1 / double(kernel_length * kernel_length - 1));
+	//_kernel.setTo(-kernel_data);
+	//_kernel.ptr<float>(int(kernel_length/2))[int(kernel_length/2)] = 1.0f;
 
 	// convlution
 	cv::Mat img_feature_1;
@@ -307,6 +307,47 @@ uchar* get_iter_ptr_down(uchar* current_ptr, int& x, int& y, int step, int elem_
 	return new_ptr;
 }
 
+bool find_first_non_zeroinROI_center(
+	uchar*& center_ptr,
+	int& x, int& y,
+	int step,
+	int elem_size,
+	int rows, int cols,
+	int n
+) {
+	if (n <= 0 || n % 2 == 0) {
+		std::cerr << "n必须是正奇数（如3,5,7...）" << std::endl;
+		return false;
+	}
+
+	int half = n / 2;
+
+	// 按距离中心的远近分层遍历
+	for (int dist = 0; dist <= half; ++dist) {
+		// 遍历当前距离层（曼哈顿距离或欧几里得距离）
+		for (int dy = -dist; dy <= dist; ++dy) {
+			for (int dx = -dist; dx <= dist; ++dx) {
+				// 只处理当前距离层的边界点（距离恰好为dist）
+				if (abs(dx) == dist || abs(dy) == dist) {
+					int nx = x + dx;
+					int ny = y + dy;
+
+					if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+						uchar* pixel_ptr = center_ptr + dy * step + dx * elem_size;
+						if (*pixel_ptr != 0) {
+							x = nx;
+							y = ny;
+							center_ptr = pixel_ptr;
+							return true;
+						}
+					}
+				}
+			}
+		}
+	}
+	return false;
+}
+
 bool find_first_non_zeroinROI(
 	uchar*& center_ptr,  // 目前像素指针-可迭代用于外部
 	int& x, int& y,       // 目前像素坐标-可迭代用于外部
@@ -363,7 +404,7 @@ float* get_ptr_F32(cv::Mat img, int x, int y) { // 这里使用的指针是float
 	return reinterpret_cast<float*>(img.data + y * img.step) + x;
 }
 
-void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::Mat& mapy, double mapping,double panel_res_rows, double panel_res_cols,std::string color, std::array<int,4> location_setting_pixels) {
+void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::Mat& mapy, double mapping,double panel_res_rows, double panel_res_cols,std::string color, std::array<int,6> location_setting_pixels) {
 	//out-location setting
 	//location_tolerate_pixels[0] -> 横向，[1]纵向
 
@@ -382,13 +423,176 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 
 	int search_size = 0;
 	if (mapping > 5) {
-		search_size = 5; // 搜索区域大小
+		search_size = 9; // 搜索区域大小
 	}
 	else {
-		search_size = 3;
+		search_size = 7;
 	}
 		
 	
+
+	//temp inital
+	int current_x_left = x;
+	int current_y_left = y;
+	int current_x_right = x;
+	int current_y_right = y;
+	//int x_new, int y_new; // 迭代
+	uchar* ptr_left = get_ptr_U8(solo_pixels_mat, x, y);
+	uchar* ptr_right = get_ptr_U8(solo_pixels_mat, x, y);
+	//stable info
+	int step = solo_pixels_mat.step;
+	int elem_size = solo_pixels_mat.elemSize();
+	int cols = solo_pixels_mat.cols;
+	int rows = solo_pixels_mat.rows;
+	//map inital
+	//mapx.create(panel_res_cols*2, panel_res_rows*2, CV_32F);
+	//mapy.create(panel_res_cols*2, panel_res_rows*2, CV_32F);
+	int elem_size_map = mapx.elemSize();
+	int step_map = mapx.step;
+	//record idx
+	int record_x = mapx.cols / 2;
+	int record_y = 0;
+	float* ptr_map_x = get_ptr_F32(mapx, record_x, record_y); //可迭代的map指针
+	float* ptr_map_y = get_ptr_F32(mapy, record_x, record_y);
+
+	//中心line起始点
+	float* mid_map_x_ptr = ptr_map_x; //用于中心line下向步进的map指针，仅在下向步进时迭代
+	float* mid_map_y_ptr = ptr_map_y;
+	int mid_map_x = x; //用于中心line下向步进的xy坐标，仅在下向步进时迭代
+	int mid_map_y = y;
+	uchar* mid_line_ptr;
+
+	//黑点记录标识符
+	int pixels_is_empty_num = 0;
+
+	for (int r = 0; r < panel_res_cols; r++) {
+		//下向步进
+		//map第一个值初始化赋值(仅在每次向下步进时进行)
+		*mid_map_x_ptr = mid_map_x;
+		*mid_map_y_ptr = mid_map_y;
+
+		//左向loop
+		//起始时初始化map指针
+		ptr_map_x = mid_map_x_ptr;
+		ptr_map_y = mid_map_y_ptr;
+		for (int left_idx = 0; left_idx < panel_res_rows; left_idx++) {
+
+			//下一个左边的中心点指针并迭代坐标
+			ptr_left = get_iter_ptr(ptr_left, current_x_left, current_y_left, step, elem_size, cols, -search_step, left_idx, color); //由于是左向，故step为负
+
+			//下个ROI第一个非0值并迭代坐标与指针迭代
+			bool is_iterable = find_first_non_zeroinROI_center(ptr_left, current_x_left, current_y_left, step, elem_size, rows, cols, search_size); //迭代x,y值，并返回是否ok
+
+			//记录
+			ptr_map_x -= elem_size; //左向减法
+			ptr_map_y -= elem_size; //左向减法
+
+			//条件
+			if (ptr_left == nullptr || is_iterable==false) { //退出条件：1.空指针 2.搜索1次以上无ROI点
+				//增强鲁棒性-未拿到时进行跳跃搜索
+				pixels_is_empty_num += 1; // 容纳4个像素黑点，向后搜索
+				if (pixels_is_empty_num > location_setting_pixels[0]) {
+					break;
+				}
+			}
+			else { //is_iterable=true时才赋值，但是每次都会迭代map指针
+				pixels_is_empty_num = 0;
+				*ptr_map_x = current_x_left;
+				*ptr_map_y = current_y_left;
+			}
+		}
+
+		//右向loop
+		//起始时初始化map指针
+		ptr_map_x = mid_map_x_ptr;
+		ptr_map_y = mid_map_y_ptr;
+		for (int right_idx = 0; right_idx < int(panel_res_rows); right_idx++) {
+
+			//下一个左边的中心点指针并迭代坐标
+			ptr_right = get_iter_ptr(ptr_right, current_x_right, current_y_right, step, elem_size, cols, search_step, right_idx, color); //由于是右向，故step为正
+
+			//下个ROI第一个非0值并迭代坐标与指针迭代
+			bool is_iterable = find_first_non_zeroinROI_center(ptr_right, current_x_right, current_y_right, step, elem_size, rows, cols, search_size); //迭代x,y值，并返回是否ok
+
+			//记录
+			ptr_map_x += elem_size; //左向减法
+			ptr_map_y += elem_size; //左向减法
+
+			//条件
+			if (ptr_right == nullptr || is_iterable == false) { //退出条件：1.空指针 2.搜索2次以上无ROI点
+				//增强鲁棒性-未拿到时进行跳跃搜索
+				pixels_is_empty_num += 1; 
+				if (pixels_is_empty_num > location_setting_pixels[0]) { // 容纳4个像素黑点，向后搜索
+					break;
+				}
+			}
+			else { //is_iterable=true时才赋值，但是每次都会迭代map指针
+				pixels_is_empty_num = 0;
+				*ptr_map_x = current_x_right;
+				*ptr_map_y = current_y_right;
+			}
+		}
+
+		//下向步进
+		//xy坐标迭代+原图指针迭代
+		mid_line_ptr = get_ptr_U8(solo_pixels_mat, mid_map_x, mid_map_y);
+		//坐标重置
+		current_x_right = mid_map_x;
+		current_y_right = mid_map_y;
+
+		mid_line_ptr = get_iter_ptr_down(mid_line_ptr, current_x_right, current_y_right, step, elem_size, cols, search_step, color);
+		//下个ROI第一个非0值并迭代坐标与指针迭代
+		bool is_iterable = find_first_non_zeroinROI_center(mid_line_ptr, current_x_right, current_y_right, step, elem_size, rows, cols, search_size); //迭代x,y值，并返回是否ok
+		
+		if (mid_line_ptr == nullptr || is_iterable == false) {
+			//增强鲁棒性-未拿到时进行跳跃搜索
+			pixels_is_empty_num += 1;
+			if (pixels_is_empty_num > location_setting_pixels[1]) { // 容纳总共4个像素黑点，向后搜索
+				break;
+			}
+		}
+
+		ptr_left = ptr_right = mid_line_ptr;
+		//左向+右向迭代完成
+		//mid_map_x+mid_map_y临时参数迭代
+		mid_map_x = current_x_right;
+		mid_map_y = current_y_right;
+
+		//左向指针同步
+		current_x_left = current_x_right;
+		current_y_left = current_y_right;
+
+		//map指针与xy迭代
+		record_y += 1; // 全排是1，如果非全排也在后面处理，此处只做base
+		mid_map_x_ptr = get_ptr_F32(mapx, record_x, record_y);
+		mid_map_y_ptr = get_ptr_F32(mapy, record_x, record_y);
+
+		//可能存在下向搜索时黑点影响，后期测试--------------------------------------------------------------------------------------------------
+	}
+}
+
+void _loop_all_pixles_curve(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::Mat& mapy, double mapping, double panel_res_rows, double panel_res_cols, std::string color, std::array<int, 4> location_setting_pixels) {
+	//out-location setting
+	//location_tolerate_pixels[0] -> 横向，[1]纵向
+
+	//loop step
+	int search_step = 0;
+	if (mapping > 8) {
+		search_step = round(mapping);
+	}if (mapping >= 6) {
+		search_step = 7;
+	}if (mapping >= 4) {
+		search_step = 5;
+	}
+	else {
+		search_step = 3;
+	}
+	// [NEW] 保存初始步长，用于找到点后恢复
+	int initial_search_step = search_step;
+	// [NEW] 定义步长上限，防止无限增大
+	int max_search_step = initial_search_step * 2;
+	//int search_step = round(mapping); // 探索步进
+	int search_size = 7; // 搜索区域大小
 
 	//temp inital
 	int current_x_left = x;
@@ -447,9 +651,11 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 			ptr_map_y -= elem_size; //左向减法
 
 			//条件
-			if (ptr_left == nullptr || is_iterable==false) { //退出条件：1.空指针 2.搜索1次以上无ROI点
+			if (ptr_left == nullptr || is_iterable == false) { //退出条件：1.空指针 2.搜索1次以上无ROI点
 				//增强鲁棒性-未拿到时进行跳跃搜索
 				pixels_is_empty_num += 1; // 容纳4个像素黑点，向后搜索
+				// [NEW] 未找到时，增大步长以跳过空白区域
+				search_step = std::min<int>(search_step * 1.2, max_search_step);
 				if (pixels_is_empty_num > location_setting_pixels[0]) {
 					break;
 				}
@@ -458,6 +664,8 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 				pixels_is_empty_num = 0;
 				*ptr_map_x = current_x_left;
 				*ptr_map_y = current_y_left;
+				// [NEW] 找到点时恢复初始步长，保证后续精度
+				search_step = initial_search_step;
 			}
 		}
 
@@ -465,6 +673,8 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 		//起始时初始化map指针
 		ptr_map_x = mid_map_x_ptr;
 		ptr_map_y = mid_map_y_ptr;
+		// [NEW] 右向时恢复初始步长，保证后续精度
+		search_step = initial_search_step;
 		for (int right_idx = 0; right_idx < int(panel_res_rows); right_idx++) {
 
 			//下一个左边的中心点指针并迭代坐标
@@ -480,7 +690,9 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 			//条件
 			if (ptr_right == nullptr || is_iterable == false) { //退出条件：1.空指针 2.搜索2次以上无ROI点
 				//增强鲁棒性-未拿到时进行跳跃搜索
-				pixels_is_empty_num += 1; 
+				pixels_is_empty_num += 1;
+				// [NEW] 未找到时，增大步长
+				search_step = std::min<int>(search_step * 1.2, max_search_step);
 				if (pixels_is_empty_num > location_setting_pixels[0]) { // 容纳4个像素黑点，向后搜索
 					break;
 				}
@@ -489,10 +701,14 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 				pixels_is_empty_num = 0;
 				*ptr_map_x = current_x_right;
 				*ptr_map_y = current_y_right;
+				// [NEW] 找到时恢复步长
+				search_step = initial_search_step;
 			}
 		}
 
 		//下向步进
+		// [NEW] 右向时恢复初始步长，保证后续精度
+		search_step = initial_search_step;
 		//xy坐标迭代+原图指针迭代
 		mid_line_ptr = get_ptr_U8(solo_pixels_mat, mid_map_x, mid_map_y);
 		//坐标重置
@@ -502,13 +718,20 @@ void _loop_all_pixles(cv::Mat solo_pixels_mat, int x, int y, cv::Mat& mapx, cv::
 		mid_line_ptr = get_iter_ptr_down(mid_line_ptr, current_x_right, current_y_right, step, elem_size, cols, search_step, color);
 		//下个ROI第一个非0值并迭代坐标与指针迭代
 		bool is_iterable = find_first_non_zeroinROI(mid_line_ptr, current_x_right, current_y_right, step, elem_size, rows, cols, search_size); //迭代x,y值，并返回是否ok
-		
+
 		if (mid_line_ptr == nullptr || is_iterable == false) {
 			//增强鲁棒性-未拿到时进行跳跃搜索
 			pixels_is_empty_num += 1;
+			// [NEW] 未找到时，增大步长
+			search_step = std::min<int>(search_step * 1.2, max_search_step);
 			if (pixels_is_empty_num > location_setting_pixels[1]) { // 容纳总共4个像素黑点，向后搜索
 				break;
 			}
+			//由于存在曲面屏
+		}
+		else {
+			// [NEW] 找到时恢复初始步长
+			search_step = initial_search_step;
 		}
 
 		ptr_left = ptr_right = mid_line_ptr;
@@ -601,7 +824,7 @@ cv::Mat _line_interpolation_inner(cv::Mat line) {
 	return line;
 }
 
-void _post_process_for_map(cv::Mat solo_pixels_mat, cv::Mat& mapx, cv::Mat& mapy, int panel_res_rows, int panel_res_cols, std::array<int, 4> location_setting_pixels) {
+void _post_process_for_map(cv::Mat solo_pixels_mat, cv::Mat& mapx, cv::Mat& mapy, int panel_res_rows, int panel_res_cols, int interval) {
 	//初始化ROI坐标
 	int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
 	cv::Mat map8U;
@@ -711,7 +934,7 @@ void _post_process_for_map(cv::Mat solo_pixels_mat, cv::Mat& mapx, cv::Mat& mapy
 	mapy = map_roi_y.clone();
 
 	//location interval (original point: panel right top)
-	int location_interval = location_setting_pixels[3];
+	int location_interval = interval;
 	if (location_interval > 0) {
 		map_roi_x = 0;
 		map_roi_y = 0;
@@ -772,7 +995,7 @@ void _post_process_for_map(cv::Mat solo_pixels_mat, cv::Mat& mapx, cv::Mat& mapy
 	mapy = map_roi_y.clone();
 }
 
-void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& mapping, int panel_res_rows,int panel_res_cols,std::string color, int is_save_location_map, std::array<int, 4> location_setting_pixels, bool is_subimage_W) {
+void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& mapping, int panel_res_rows,int panel_res_cols,std::string color, int is_save_location_map, std::array<int, 6> location_setting_pixels, bool is_subimage_W, std::string camera_grab_type) {
 	cv::Mat map;
 	cv::Mat location_map_mono_f32_roi;
 	cv::Mat solo_pixels_mat;
@@ -794,13 +1017,15 @@ void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& m
 	// get mapping
 	std::cout << get_time() << ":get mapping" << std::endl;
 	mapping = _get_mapping(f_map_shift);
-	if (location_setting_pixels[2] > 0){
-		mapping = location_setting_pixels[2];
+	size_t color_index = std::string("RGB").find(color);
+	if (location_setting_pixels[2 + color_index] > 0) {
+		mapping = location_setting_pixels[2 + color_index];
 	}
+
 
 	// pixels solo
 	std::cout << get_time() << ":pixels solo" << std::endl;
-	if (is_subimage_W) {
+	if (is_subimage_W || camera_grab_type=="C_L_W_G") {
 		solo_pixels_mat = _solo_pixels_color(location_map, mapping, color);
 	}
 	else {
@@ -816,8 +1041,9 @@ void get_map(const cv::Mat& location_map, cv::Mat& mapx, cv::Mat& mapy,double& m
 	// loop in all pixels
 	std::cout << get_time() << ":loop in all pixels" << std::endl;
 	_loop_all_pixles(solo_pixels_mat, x, y, mapx, mapy, mapping, panel_res_rows, panel_res_cols, color, location_setting_pixels);
+	//_loop_all_pixles_curve(solo_pixels_mat, x, y, mapx, mapy, mapping, panel_res_rows, panel_res_cols, color, location_setting_pixels);
 
 	// post process for map
 	std::cout << get_time() << ":post process for map" << std::endl;
-	_post_process_for_map(solo_pixels_mat, mapx, mapy, panel_res_rows, panel_res_cols, location_setting_pixels);
+	_post_process_for_map(solo_pixels_mat, mapx, mapy, panel_res_rows, panel_res_cols, location_setting_pixels[5]);
 }
