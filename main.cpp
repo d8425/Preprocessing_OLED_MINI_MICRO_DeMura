@@ -70,7 +70,6 @@ int main()
         string_split_num(param["Process"]["de_moire"], is_demoire, ',');
         string_split_num(param["Process"]["curved_corr"], is_curved_corr, ',');
 
-
         // tools
         /*int is_sandy_quantization = std::stoi(param["Tool"]["sandy_quantization"]);
         int is_csv_demoire = std::stoi(param["Tool"]["csv_demoire"]);*/
@@ -234,8 +233,16 @@ int main()
                     std::cout << get_time() << sub_name + ":de-moire" << std::endl;
                 }
                 if (is_curved_corr[0] != 0) {
-                    //csv /= 80;
-                    curved_corr(csv, is_curved_corr[0], is_curved_corr[1], single_color);
+                    csv /= 80;
+                    //curved_corr(csv, is_curved_corr[0], is_curved_corr[1], single_color);
+                    cv::Mat csv_curved = get_brt_curved(img, map_store[sub_img_idx * 2], map_store[sub_img_idx * 2 + 1], mapping, panel_res_rows, panel_res_cols, single_color, brightness_setting);
+                    csv_curved = csv_curved / (std::stoi(exp_list[img_idx]) * std::stoi(gain_list[img_idx]));
+                    csv_flip(csv_curved);
+                    hole_fill(csv_curved);
+                    corner_fill(csv_curved);
+                    csv_curved /= 80;
+                    //curved_corr_corner(csv, is_curved_corr[0], is_curved_corr[1], single_color);
+                    curved_corr_corner_double_csv(csv, csv_curved, is_curved_corr[0], is_curved_corr[1], is_curved_corr[2], single_color);
                     std::cout << get_time() << sub_name + ":curved corr" << std::endl;
                 }
 
