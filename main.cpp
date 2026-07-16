@@ -65,10 +65,13 @@ int main()
         int is_ffc = std::stoi(param["Preprocess"]["ffc"]);
         
         // postprocess
-        std::vector<double> is_demoire, is_curved_corr;
+        std::vector<double> is_demoire, is_curved_corr, is_curved_color_dev, is_curved_color_dev_2, is_curved_corr_2;
         int is_hole_corner_filling = std::stoi(param["Process"]["hole_corner_filling"]); // hole与corner填充
         string_split_num(param["Process"]["de_moire"], is_demoire, ',');
-        string_split_num(param["Process"]["curved_corr"], is_curved_corr, ',');
+        string_split_num(param["Process"]["curved_corr"], is_curved_corr, ','); 
+        string_split_num(param["Process"]["curved_corr_2"], is_curved_corr_2, ',');
+        string_split_num(param["Process"]["curved_color_dev"], is_curved_color_dev, ',');
+        string_split_num(param["Process"]["curved_color_dev_2"], is_curved_color_dev_2, ',');
 
         // tools
         /*int is_sandy_quantization = std::stoi(param["Tool"]["sandy_quantization"]);
@@ -180,7 +183,8 @@ int main()
                 if (single_color == "W"|| is_subimage_W==1) { // COLOR
                     img = imgc[sub_img_idx];
                     single_color = RGB[sub_img_idx];
-                    sub_name = single_color + "_" + files_index[img_idx];
+                    //sub_name = single_color + "_" + files_index[img_idx];
+                    sub_name = single_color + files_index[img_idx].substr(1);
                 }
                 else { // MONO
                     sub_name = files_index[img_idx];
@@ -232,7 +236,7 @@ int main()
                     de_moire(csv, is_demoire[1], is_demoire[2]);
                     std::cout << get_time() << sub_name + ":de-moire" << std::endl;
                 }
-                if (is_curved_corr[0] != 0) {
+                if (is_curved_corr_2[0] != 0) {
                     csv /= 80;
                     //curved_corr(csv, is_curved_corr[0], is_curved_corr[1], single_color);
                     cv::Mat csv_curved = get_brt_curved(img, map_store[sub_img_idx * 2], map_store[sub_img_idx * 2 + 1], mapping, panel_res_rows, panel_res_cols, single_color, brightness_setting);
@@ -242,9 +246,19 @@ int main()
                     corner_fill(csv_curved);
                     csv_curved /= 80;
                     //curved_corr_corner(csv, is_curved_corr[0], is_curved_corr[1], single_color);
-                    curved_corr_corner_double_csv(csv, csv_curved, is_curved_corr[0], is_curved_corr[1], is_curved_corr[2], single_color);
+                    //curved_corr_corner_double_csv(csv, csv_curved, is_curved_corr[0], is_curved_corr[1], is_curved_corr[2], single_color);
+                    //curved_corr_corner_double_csv_0707(csv, csv_curved, is_curved_corr[0], is_curved_corr[1], is_curved_corr[2], single_color);
+                    curved_corr_corner_double_csv_0709(csv, is_curved_corr_2[0], is_curved_corr_2[1], is_curved_corr_2[2], is_curved_corr_2[3], is_curved_corr_2[4], is_curved_corr_2[5], single_color);
                     std::cout << get_time() << sub_name + ":curved corr" << std::endl;
                 }
+
+                if (is_curved_color_dev_2[0] != 0) {
+                    curved_color_dev_corr(csv, is_curved_color_dev_2[0], is_curved_color_dev_2[1], is_curved_color_dev_2[2], is_curved_color_dev_2[2], single_color);
+                }
+                if (is_curved_color_dev[0] != 0) {
+                    curved_color_dev_corr(csv, is_curved_color_dev[0], is_curved_color_dev[1], is_curved_color_dev[2], is_curved_color_dev[2], single_color);
+                }
+
 
                 // 7.AOI
                 if (is_aoi != 0) {

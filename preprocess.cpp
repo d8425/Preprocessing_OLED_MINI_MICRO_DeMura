@@ -52,25 +52,74 @@ std::map<std::string, std::map<std::string, std::string>> read_ini(const std::st
     return ini_data; // 返回解析后的配置（无全局变量）
 }
 
+//cv::Mat readImage(const std::string& path, std::string img_type) {
+//    if (img_type == "tif" || img_type == "TIF" || img_type == "MIM" || img_type == "mim") {
+//        cv::Mat image = cv::imread(path, cv::COLOR_BGR2GRAY);
+//        return image;
+//    }
+//    if (img_type == "csv" || img_type == "CSV") {
+//        std::vector<std::vector<float>> g;
+//        std::string l;
+//        for (std::ifstream s(path); std::getline(s, l);) {
+//            std::stringstream t(l);
+//            std::vector<float> r;
+//            std::string v;
+//            while (std::getline(t, v, ',')) r.push_back(std::stof(v));
+//            g.emplace_back(r);
+//        }
+//        cv::Mat m(g.size(), g[0].size(), CV_32F);
+//        for (int i = 0; i < m.rows; ++i) std::memcpy(m.ptr(i), g[i].data(), m.cols * sizeof(float));
+//        return m;
+//    }
+//}
+
+static std::string trim(const std::string& s) {
+    auto l = s.begin(), r = s.end();
+    while (l != r && std::isspace(static_cast<unsigned char>(*l))) l++;
+    do r--; while (l != r && std::isspace(static_cast<unsigned char>(*r)));
+    return std::string(l, r + 1);
+}
+
+static void skipBom(std::ifstream& f) {
+    unsigned char b[3];
+    auto pos = f.tellg();
+    f.read((char*)b, 3);
+    if (!(b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF)) f.seekg(pos);
+}
+
+static float stofSafe(const std::string& s) { try { return std::stof(s); } catch (...) { return 0.f; } }
+
 cv::Mat readImage(const std::string& path, std::string img_type) {
     if (img_type == "tif" || img_type == "TIF" || img_type == "MIM" || img_type == "mim") {
-        cv::Mat image = cv::imread(path, cv::COLOR_BGR2GRAY);
+        cv::Mat image = cv::imread(path, cv::IMREAD_GRAYSCALE);
         return image;
     }
     if (img_type == "csv" || img_type == "CSV") {
+        std::ifstream fs(path);
+        if (!fs) return {};
+        skipBom(fs);
         std::vector<std::vector<float>> g;
         std::string l;
-        for (std::ifstream s(path); std::getline(s, l);) {
+        while (std::getline(fs, l)) {
+            l = trim(l);
+            if (l.empty()) continue;
             std::stringstream t(l);
             std::vector<float> r;
             std::string v;
-            while (std::getline(t, v, ',')) r.push_back(std::stof(v));
-            g.emplace_back(r);
+            while (std::getline(t, v, ',')) {
+                v = trim(v);
+                if (!v.empty()) r.push_back(stofSafe(v));
+            }
+            if (!r.empty()) g.push_back(r);
         }
-        cv::Mat m(g.size(), g[0].size(), CV_32F);
-        for (int i = 0; i < m.rows; ++i) std::memcpy(m.ptr(i), g[i].data(), m.cols * sizeof(float));
+        if (g.empty()) return {};
+        int rows = g.size(), cols = g[0].size();
+        cv::Mat m(rows, cols, CV_32F);
+        for (int i = 0; i < rows; ++i)
+            std::memcpy(m.ptr(i), g[i].data(), cols * sizeof(float));
         return m;
     }
+    return {};
 }
 
 std::vector<float> parse2Float(const std::string& str) {

@@ -358,6 +358,278 @@ void de_moire_low(cv::Mat& csv, double threshold_coef, double blur_strength) {
     img_ifft.copyTo(csv);
 }
 
+void curved_color_dev_corr(cv::Mat& csv, double curved_pixels_num, double R_coef, double G_coef, double B_coef, std::string color) {
+    int curved_pixels_num_int = (int)curved_pixels_num;
+    if (curved_pixels_num != 0) {
+        int r, c;
+        r = csv.rows;
+        c = csv.cols;
+
+        curved_pixels_num = int(curved_pixels_num);
+        int curved_pixels_num_td = curved_pixels_num; // td: top and down
+        int curved_pixels_num_lr = curved_pixels_num; // lr: left and right
+        if (color == "R" || color == "B") {
+            c *= 2;
+        }
+        cv::Mat canvas(r, c, CV_8UC1);
+
+        // 圆角矩形区域
+        cv::Rect box(0, 0, c, r);
+        int round_radius = 170;
+
+        // 填充浅灰色圆角矩形
+        roundedRectFill(canvas, box, round_radius, cv::Scalar(255));
+        cv::Mat mask_all = canvas.clone();
+        // 绘制红色圆角边框，线宽3
+        roundedRectOutline(canvas, box, round_radius, cv::Scalar(0, 0, 0), curved_pixels_num * 2);
+        cv::Mat mask_f = mask_all - canvas;
+
+        if (color == "R" || color == "B") {
+            c /= 2;
+            cv::resize(mask_f, mask_f, cv::Size(c, r));
+        }
+
+        //// dilate
+        //cv::Mat kernel = cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(5, 5));
+        //cv::dilate(mask_f, mask_f, kernel);
+
+        // mask 过度
+        cv::Mat mask_f_blur;
+        cv::GaussianBlur(mask_f, mask_f_blur, cv::Size(0, 0), 3);
+        mask_f_blur.convertTo(mask_f_blur, CV_32F);
+        mask_f_blur /= 255;
+
+        cv::Mat temp;
+        if (R_coef != 0 && color == "R") {
+            temp = csv.clone();
+            temp *= R_coef;
+            //temp.copyTo(csv, mask_f);
+            csv = temp.mul(mask_f_blur) + csv.mul(1 - mask_f_blur);
+        }
+        if (G_coef != 0 && color == "G") {
+            temp = csv.clone();
+            temp *= G_coef;
+            temp.copyTo(csv, mask_f);
+            csv = temp.mul(mask_f_blur) + csv.mul(1 - mask_f_blur);
+        }
+        if (B_coef != 0 && color == "B") {
+            temp = csv.clone();
+            temp *= B_coef;
+            temp.copyTo(csv, mask_f);
+            csv = temp.mul(mask_f_blur) + csv.mul(1 - mask_f_blur);
+        }
+    }
+}
+
+
+cv::Mat get_curved_mask(cv::Mat csv, double curved_pixels_num, std::string color) {
+    int r, c;
+    r = csv.rows;
+    c = csv.cols;
+
+    curved_pixels_num = int(curved_pixels_num);
+    int curved_pixels_num_td = curved_pixels_num; // td: top and down
+    int curved_pixels_num_lr = curved_pixels_num; // lr: left and right
+    if (color == "R" || color == "B") {
+        c *= 2;
+    }
+    cv::Mat canvas(r, c, CV_8UC1);
+
+    // 圆角矩形区域
+    cv::Rect box(0, 0, c, r);
+    int round_radius = 180;
+
+    // 填充浅灰色圆角矩形
+    roundedRectFill(canvas, box, round_radius, cv::Scalar(255));
+    cv::Mat mask_all = canvas.clone();
+    // 绘制红色圆角边框，线宽3
+    roundedRectOutline(canvas, box, round_radius, cv::Scalar(0, 0, 0), curved_pixels_num * 2);
+    cv::Mat mask_f = mask_all - canvas;
+
+    if (color == "R" || color == "B") {
+        c /= 2;
+        cv::resize(mask_f, mask_f, cv::Size(c, r));
+    }
+    return mask_f;
+}
+
+void curved_corr_corner_double_csv_0709(cv::Mat& csv, double curved_pixels_num, double curved_pixels_num_outer, double coefR, double coefG, double coefB, double curved_smooth_coef, std::string color) {
+    int curved_pixels_num_int = (int)curved_pixels_num;
+    if (curved_pixels_num != 0) {
+        int r, c;
+        r = csv.rows;
+        c = csv.cols;
+
+
+        cv::Mat mask_f = get_curved_mask(csv, curved_pixels_num, color);
+        cv::Mat mask_f_2 = get_curved_mask(csv, curved_pixels_num_outer, color);
+        cv::Mat mask =  mask_f- mask_f_2;
+
+        // 内圈mask平滑过度
+        cv::Mat mask_f_blur;
+        //cv::GaussianBlur(mask_f, mask_f_blur, cv::Size(0, 0), 4);
+        cv::Mat mask1 = mask_f - mask_f_2;
+        cv::GaussianBlur(mask1, mask_f_blur, cv::Size(0, 0), curved_smooth_coef);
+        mask_f_blur.convertTo(mask_f_blur, CV_32F);
+        mask_f_blur /= 255;
+
+        cv::Mat temp = csv.clone();
+        if (color == "R") {
+            temp *= coefR;
+        }
+        if (color == "G") {
+            temp *= coefG;
+        }
+        if (color == "B") {
+            temp *= coefB;
+        }
+            
+
+        // temp.copyTo(csv, mask1);
+
+        csv = temp.mul(mask_f_blur) + csv.mul(1 - mask_f_blur);
+
+        //// dilate
+        //cv::Mat kernel = cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(5, 5));
+        //cv::dilate(mask_f, mask_f, kernel);
+
+        //csv.setTo(100, mask_f);
+
+
+
+        //// mask 过度
+        //cv::Mat mask_f_blur;
+        //cv::GaussianBlur(mask_f, mask_f_blur, cv::Size(0, 0), 4);
+        //mask_f_blur.convertTo(mask_f_blur, CV_32F);
+        //mask_f_blur /= 255;
+
+
+
+    }
+}
+
+void curved_corr_corner_double_csv_0707(cv::Mat& csv, cv::Mat& csv_curved, double curved_pixels_num, double curved_pixels_coef, double curved_contrast_coef, std::string color) {
+    int curved_pixels_num_int = (int)curved_pixels_num;
+    if (curved_pixels_num != 0) {
+        int r, c;
+        r = csv.rows;
+        c = csv.cols;
+
+        curved_pixels_num = int(curved_pixels_num);
+        int curved_pixels_num_td = curved_pixels_num; // td: top and down
+        int curved_pixels_num_lr = curved_pixels_num; // lr: left and right
+        if (color == "R" || color == "B") {
+            c *= 2;
+        }
+        cv::Mat canvas(r, c, CV_8UC1);
+
+        // 圆角矩形区域
+        cv::Rect box(0, 0, c, r);
+        int round_radius = 170;
+
+        // 填充浅灰色圆角矩形
+        roundedRectFill(canvas, box, round_radius, cv::Scalar(255));
+        cv::Mat mask_all = canvas.clone();
+        // 绘制红色圆角边框，线宽3
+        roundedRectOutline(canvas, box, round_radius, cv::Scalar(0, 0, 0), curved_pixels_num * 2);
+        cv::Mat mask_f = mask_all - canvas;
+
+        if (color == "R" || color == "B") {
+            c /= 2;
+            cv::resize(mask_f, mask_f, cv::Size(c, r));
+        }
+
+        // dilate
+        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(5, 5));
+        cv::dilate(mask_f, mask_f, kernel);
+        // mask 过度
+        cv::Mat mask_f_blur;
+        cv::GaussianBlur(mask_f, mask_f_blur, cv::Size(0, 0), 4);
+        mask_f_blur.convertTo(mask_f_blur, CV_32F);
+        mask_f_blur /= 255;
+
+        // 两个csv亮度一致性
+        double ori_value = cv::mean(csv)[0];
+        double curved_value_0 = cv::mean(csv_curved)[0];
+        csv_curved *= ori_value / curved_value_0;
+        csv_curved.copyTo(csv, mask_f);
+
+        // 线去除
+        cv::Mat temp_roi;
+        if (curved_contrast_coef != 0) {
+            //cv::Mat temp_roi = csv.clone();
+            cv::Mat temp_roi = csv_curved.clone();
+            double ori_val = cv::mean(temp_roi, mask_f)[0];
+            cv::pow(temp_roi, curved_contrast_coef, temp_roi);
+            double now_val = cv::mean(temp_roi, mask_f)[0];
+            double coef = ori_val / now_val;
+            temp_roi *= coef;
+            //temp_roi.copyTo(csv, mask_f);
+            //cv::Mat temp2 = temp_roi.mul(mask_f_blur) + csv.mul(1 - mask_f_blur);
+        }
+        else {
+            temp_roi = csv_curved.clone();
+        }
+
+
+
+
+        //// 梯度
+        //cv::Mat kernel_line = (cv::Mat_<float>(5, 5) <<
+        //    -1, -1, -1, -1, -1,
+        //    -1, -1, -1, -1, -1,
+        //    -1, -1, 24, -1, -1,
+        //    -1, -1, -1, -1, -1,
+        //    -1, -1, -1, -1, -1);
+        //filter2D(temp_roi, temp_roi, CV_32F, kernel_line);
+        ///*double thresh_line = cv::mean(temp_roi, mask_f)[0];
+        //thresh_line = thresh_line + 1;*/
+        //cv::Mat mask_line = temp_roi > 0.5;
+        //cv::bitwise_and(mask_line, mask_f, mask_line);
+        //double curved_roi_val = cv::mean(csv, mask_f)[0];
+        //cv::dilate(mask_line, mask_line, kernel);
+        //// 高亮
+        //double thresh = cv::mean(csv, mask_f)[0];
+        //cv::Mat high_mask = csv > 1.1 * thresh;
+        ////cv::Mat mask_line_1;
+        //cv::bitwise_and(high_mask, mask_line, mask_line);
+        //// 线区与均值靠齐
+        //double line_value = cv::mean(csv, mask_line)[0];
+        //double curved_value = cv::mean(csv, mask_f)[0];
+        //cv::Mat temp2 = csv.clone();
+        ////temp2 *= curved_value / line_value;
+        ////cv::GaussianBlur(temp2, temp2, cv::Size(5, 5), 0);
+        //cv::blur(temp2, temp2, cv::Size(5, 5));
+        //temp2 *= bright_line_coef; //为了线区模糊后亮度降低
+        ////double line_coef = 0.95;
+        ////temp2 *= line_coef;
+        //mask_line.convertTo(mask_line, CV_32F);
+        //mask_line /= 255;
+        //cv::GaussianBlur(mask_line, mask_line, cv::Size(5, 5), 0);
+        //csv = temp2.mul(mask_line) + csv.mul(1 - mask_line);
+
+
+        // 亮度矫正
+        cv::Mat resized_img, temp, middle_roi;
+        // 用中间csv计算低频亮度
+        //csv(cv::Range(curved_pixels_num_int * 2, r - curved_pixels_num_int * 2), cv::Range(curved_pixels_num_int * 2, c - curved_pixels_num_int * 2)).copyTo(middle_roi);
+        temp_roi(cv::Range(curved_pixels_num_int * 2, r - curved_pixels_num_int * 2), cv::Range(curved_pixels_num_int * 2, c - curved_pixels_num_int * 2)).copyTo(middle_roi);
+        cv::resize(middle_roi, resized_img, cv::Size(), 0.1, 0.1);
+        cv::resize(resized_img, resized_img, cv::Size(c, r));
+        double ori_val1 = cv::mean(resized_img, mask_f)[0];
+        double now_val1 = cv::mean(csv, mask_f)[0];
+        //temp = csv.clone();
+        temp = temp_roi.clone();
+        temp *= ori_val1 / now_val1;
+        temp *= curved_pixels_coef;
+        //temp.copyTo(csv, mask_f);
+        cv::Mat temp2 = temp.mul(mask_f_blur) + csv.mul(1 - mask_f_blur);
+        csv = temp2;
+        // 过渡区平滑
+
+    }
+}
+
 void curved_corr(cv::Mat& csv, double curved_pixels_num, double curved_pixels_coef, std::string color) {
     if (curved_pixels_num != 0) {
         int r, c;

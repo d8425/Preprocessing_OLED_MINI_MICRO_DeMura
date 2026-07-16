@@ -2,6 +2,9 @@
 #define PREPROCESS_H
 
 # include <string>
+#include <cstring>
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <fstream>
 #include <map>

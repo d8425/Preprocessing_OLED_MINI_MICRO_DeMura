@@ -17,6 +17,9 @@ void curved_corr(cv::Mat& csv, double curved_pixels_num, double curved_pixels_co
 void curved_corr_corner(cv::Mat& csv, double curved_pixels_num, double curved_pixels_coef, std::string color);
 void curved_corr_corner_1(cv::Mat& csv, double curved_pixels_num, double curved_pixels_coef, std::string color);
 void curved_corr_corner_double_csv(cv::Mat& csv, cv::Mat& csv_curved, double curved_pixels_num, double curved_pixels_coef, double bright_line_coef, std::string color);
+void curved_corr_corner_double_csv_0707(cv::Mat& csv, cv::Mat& csv_curved, double curved_pixels_num, double curved_pixels_coef, double bright_line_coef, std::string color);
+void curved_corr_corner_double_csv_0709(cv::Mat& csv, double curved_pixels_num, double curved_pixels_num_outer, double coefR, double coefG, double coefB, double curved_smooth_coef, std::string color);
+void curved_color_dev_corr(cv::Mat& csv, double curved_pixels_num, double R_coef, double G_coef, double B_coef, std::string color);
 void roundedRectFill(cv::Mat& img, cv::Rect rect, int radius, cv::Scalar color);
 void roundedRectOutline(cv::Mat& img, cv::Rect rect, int radius, cv::Scalar color, int thickness);
 double getTopPercentThresh(cv::Mat src, float percent = 0.2f);

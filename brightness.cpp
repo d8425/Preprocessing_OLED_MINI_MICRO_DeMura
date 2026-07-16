@@ -1,6 +1,6 @@
 ﻿#include "brightness.h"
 #include "get_brightness_cuda.cuh"
-#include "cuda_runtime.h"
+//#include "cuda_runtime.h"
 #include "tools.h"
 
 cv::Mat _get_kernel(double mapping) {
@@ -110,7 +110,7 @@ void _get_brightness(cv::Mat img, cv::Mat mapx, cv::Mat mapy,
 cv::Mat get_brt_curved(const cv::Mat& img, cv::Mat& mapx, cv::Mat& mapy, double mapping, double panel_rows, double panel_cols, std::string color, std::array<double, 3> brightness_setting) {
     //check cuda is available
     int cuda_device_count = 0;
-    cudaError_t err = cudaGetDeviceCount(&cuda_device_count);
+    //cudaError_t err = cudaGetDeviceCount(&cuda_device_count);
 
     //get brightness kernel
     cv::Mat kernel;
@@ -131,33 +131,33 @@ cv::Mat get_brt_curved(const cv::Mat& img, cv::Mat& mapx, cv::Mat& mapy, double 
     csv.create(mapy.rows, mapy.cols, CV_32FC1);
 
 
-    if (cuda_device_count) {
-        //确保连续内存（CUDA 需要）
-        std::cout << get_time() << ":CUDA" << std::endl;
-        if (!imgf.isContinuous())  imgf = imgf.clone();
-        if (!mapy.isContinuous())  mapy = mapy.clone();
-        if (!mapx.isContinuous())  mapx = mapx.clone();
-        if (!kernel.isContinuous()) kernel = kernel.clone();
+    //if (cuda_device_count) {
+    //    //确保连续内存（CUDA 需要）
+    //    std::cout << get_time() << ":CUDA" << std::endl;
+    //    if (!imgf.isContinuous())  imgf = imgf.clone();
+    //    if (!mapy.isContinuous())  mapy = mapy.clone();
+    //    if (!mapx.isContinuous())  mapx = mapx.clone();
+    //    if (!kernel.isContinuous()) kernel = kernel.clone();
 
-        get_brightness_cuda_wrapper(
-            imgf.ptr<float>(), imgf.rows, imgf.cols,
-            mapy.ptr<float>(),
-            mapx.ptr<float>(),
-            kernel.ptr<float>(), kernel.rows,
-            csv.ptr<float>(), csv.rows, csv.cols
-        );
-    }
-    else {
+    //    get_brightness_cuda_wrapper(
+    //        imgf.ptr<float>(), imgf.rows, imgf.cols,
+    //        mapy.ptr<float>(),
+    //        mapx.ptr<float>(),
+    //        kernel.ptr<float>(), kernel.rows,
+    //        csv.ptr<float>(), csv.rows, csv.cols
+    //    );
+    //}
+    //else {
         std::cout << get_time() << ":CPU" << std::endl;
         _get_brightness(imgf, mapy, mapx, kernel, csv);
-    }
+    //}
     return csv;
 }
 
 cv::Mat get_brt(const cv::Mat& img, cv::Mat& mapx, cv::Mat& mapy, double mapping, double panel_rows, double panel_cols, std::string color, std::array<double, 3> brightness_setting) {
     //check cuda is available
     int cuda_device_count = 0;
-    cudaError_t err = cudaGetDeviceCount(&cuda_device_count);
+    //cudaError_t err = cudaGetDeviceCount(&cuda_device_count);
 
     //get brightness kernel
     cv::Mat kernel;
@@ -178,25 +178,25 @@ cv::Mat get_brt(const cv::Mat& img, cv::Mat& mapx, cv::Mat& mapy, double mapping
     csv.create(mapy.rows, mapy.cols, CV_32FC1);
 
 
-    if (cuda_device_count) {
-        //确保连续内存（CUDA 需要）
-        std::cout << get_time() << ":CUDA" << std::endl;
-        if (!imgf.isContinuous())  imgf = imgf.clone();
-        if (!mapy.isContinuous())  mapy = mapy.clone();
-        if (!mapx.isContinuous())  mapx = mapx.clone();
-        if (!kernel.isContinuous()) kernel = kernel.clone();
+    //if (cuda_device_count) {
+    //    //确保连续内存（CUDA 需要）
+    //    std::cout << get_time() << ":CUDA" << std::endl;
+    //    if (!imgf.isContinuous())  imgf = imgf.clone();
+    //    if (!mapy.isContinuous())  mapy = mapy.clone();
+    //    if (!mapx.isContinuous())  mapx = mapx.clone();
+    //    if (!kernel.isContinuous()) kernel = kernel.clone();
 
-        get_brightness_cuda_wrapper(
-            imgf.ptr<float>(), imgf.rows, imgf.cols,
-            mapy.ptr<float>(),
-            mapx.ptr<float>(),
-            kernel.ptr<float>(), kernel.rows,
-            csv.ptr<float>(), csv.rows, csv.cols
-        );
-    }
-    else {
+    //    get_brightness_cuda_wrapper(
+    //        imgf.ptr<float>(), imgf.rows, imgf.cols,
+    //        mapy.ptr<float>(),
+    //        mapx.ptr<float>(),
+    //        kernel.ptr<float>(), kernel.rows,
+    //        csv.ptr<float>(), csv.rows, csv.cols
+    //    );
+    //}
+    //else {
         std::cout << get_time() << ":CPU" << std::endl;
         _get_brightness(imgf, mapy, mapx, kernel, csv);
-    }
+    //}
     return csv;
 }
